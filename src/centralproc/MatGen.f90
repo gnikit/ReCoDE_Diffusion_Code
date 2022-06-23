@@ -12,6 +12,7 @@ Module MatGen_Mod
 # endif
 # ifndef PETSC
     use CRS_Mod
+    use CDS_Mod
     use Solver_Mod
 # endif
     use Output_Mod
@@ -49,7 +50,7 @@ Subroutine Create(this,Problem)
 
 # ifndef PETSC 
     !! Allocate the matrix to be a CRS matrix
-    allocate(t_crs :: this%matrix)
+    allocate(t_cds :: this%matrix)
     !! Construct the matrix
     call this%matrix%construct(N_Nodes, N_Nodes)
 # endif
