@@ -5,15 +5,16 @@ use Matrix_Base
 implicit none
 
 type, extends(t_matrix_base)  ::  t_cds  !A type designed to store a matrix in Compressed Diagonal storage fromat using the Intel MKL diagonal storage format
-  integer, private                            ::  ndiag !An integer containing the number of diagonals with non-zero elements
-  integer, dimension(:), allocatable, private ::  distance  !An array which contains the locations of the diagonals with non-zero elements
+  private
+  integer                            ::  ndiag !An integer containing the number of diagonals with non-zero elements
+  integer, dimension(:), allocatable ::  distance  !An array which contains the locations of the diagonals with non-zero elements
   real(kind=dp), dimension(:,:), allocatable  ::  values  !An array which contains the values found in each diagonal. The first dimension increases with increasing diagonal number, the second with increasing row number
 contains
-  procedure ::  construct => cds_construct
-  procedure ::  destroy => cds_destroy
-  procedure ::  get => cds_get
-  procedure ::  set => cds_set
-  procedure ::  operate => operate_cds
+  procedure, public ::  construct => cds_construct
+  procedure, public ::  destroy => cds_destroy
+  procedure, public ::  get => cds_get
+  procedure, public ::  set => cds_set
+  procedure, public ::  operate => operate_cds
   procedure ::  find_diag_ref => cds_find_diag_ref
   procedure ::  remove_zero => cds_remove_zero
 
