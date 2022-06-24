@@ -16,12 +16,7 @@ contains
   procedure ::  operate => operate_cds
   procedure ::  set_values => cds_set_values
   procedure ::  find_diag_ref => cds_find_diag_ref
-  procedure ::  set_ndiag => cds_set_ndiag
-  procedure ::  return_ndiag => cds_return_ndiag
-  procedure ::  set_distance => cds_set_distance
-  procedure ::  return_distance => cds_return_distance
   procedure ::  remove_zero => cds_remove_zero
-  procedure ::  max_entries_row => cds_max_entries_row
 
 end type t_cds
 
@@ -66,7 +61,6 @@ real(kind=dp) function cds_get(this, row, column) !A function which returns the 
   integer                       ::  diagonal !The diagonal of the value to be returned
   integer                       ::  location  !The location of the value to be returned within the diagonal
   integer                       ::  diagref  !The first array index of the value to be returned in the values array of the t_cds type
-  integer                       ::  ii  !A generic counting variable
   logical                       ::  padded  !Will be set to false if the value is not padded
 
   !Check the called for value is within the matrix. If it's not then end the program
@@ -164,7 +158,6 @@ subroutine cds_set_values(this, nvaluesin, rows, columns, valuesin) !A subroutin
   integer, dimension(:), allocatable                    ::  distancetemp  !Temporary version of distance array
   real(kind=dp), dimension(:,:), allocatable            ::  valuestemp  !Temporary version of the values array from the cds
   integer                                               ::  nnewdiags !The number of new diagonals added
-  integer                                               ::  insertref !The entry in the distance matrix a new diagonal will take
   logical                                               ::  newdiag !A variables used to track if a diagonal has already been added
   integer                                               ::  ii,jj !Generic counting variables
 
@@ -221,8 +214,8 @@ subroutine cds_set_values(this, nvaluesin, rows, columns, valuesin) !A subroutin
     !Reallocate the value array and put the values back in
     deallocate(this%values)
   end if
-print*, "REALLOCATE", this%ndiag+nnewdiags, this%n_row
-  !Change values so it is the correct value in previously define entries and zero in new diagonals
+
+  !Change values so it is the correct value in previously defined entries and zero in new diagonals
   allocate(this%values(this%ndiag+nnewdiags,this%n_row))
   if(allocated(valuestemp))this%values(1:this%ndiag,:)=valuestemp
   this%values(this%ndiag+1:this%ndiag+nnewdiags,:)=0.0_dp
@@ -276,77 +269,6 @@ print*, "REALLOCATE", this%ndiag+nnewdiags, this%n_row
   call this%remove_zero()
 
 end subroutine cds_set_values
-!----------------------------------------------------------------------------------------------------
-!----------------------------------------------------------------------------------------------------
-
-integer function cds_return_size(this)
-  class(t_cds), intent(in) ::  this !The matrix whose size is to be returned
-
-  cds_return_size=this%n_row
-
-end function
-
-!----------------------------------------------------------------------------------------------------
-!----------------------------------------------------------------------------------------------------
-
-subroutine cds_set_ndiag(this, ndiag) !A subroutine which sets the number of non-zero diagonals. Sets all the distances and values to zero
-  class(t_cds), intent(inout)  :: this !The instance of t_cds
-  integer, intent(in)               :: ndiag !The value the size the matrix will be set to
-
-  if (allocated(this%values)) deallocate(this%values)
-  if (allocated(this%distance)) deallocate(this%distance)
-
-  this%ndiag=ndiag
-
-  allocate(this%values(this%ndiag,this%n_row), this%distance(this%ndiag))
-
-  this%distance=0
-  this%values=0.0_dp
-
-end subroutine
-
-!----------------------------------------------------------------------------------------------------
-!----------------------------------------------------------------------------------------------------
-
-integer function cds_return_ndiag(this)
-  class(t_cds), intent(in) ::  this !The matrix for which the number of non-zero diagonals is to be returned
-
-  cds_return_ndiag=this%ndiag
-
-end function
-
-!----------------------------------------------------------------------------------------------------
-!----------------------------------------------------------------------------------------------------
-
-subroutine cds_set_distance(this, distance) !A subroutine which sets the distance the non-zero diagonals are from the central diagonal.
-  class(t_cds), intent(inout)  :: this !The instance of t_cds
-  integer, dimension(:), intent(in) :: distance !The array which distances will be set to
-
-  !Check that the number of entries in the supplied distance is equal to what is expected.
-  if (size(distance) .ne. this%ndiag) then
-    !If not, display a warning then reset the matrix with these new diagonals
-    print*, "Warning: In cds class you have asked to set the distance parameter for the non-zero diagonals to a different "&
-    //"number of values than there are diagonals. Deleting the current contents of matrix, setting the number of diagonals "&
-    //"to match and setting all values to zero."
-    call this%set_ndiag(size(distance))
-  end if
-
-  this%distance=distance
-
-end subroutine
-
-!----------------------------------------------------------------------------------------------------
-!----------------------------------------------------------------------------------------------------
-
-function cds_return_distance(this) !This function returns the distance variable
-  class(t_cds), intent(in)       ::  this !The matrix for which the number of non-zero diagonals is to be returned
-  integer, dimension(:), allocatable  ::  cds_return_distance
-
-  allocate(cds_return_distance(this%ndiag))
-
-  cds_return_distance=this%distance
-
-end function
 
 !----------------------------------------------------------------------------------------------------
 !----------------------------------------------------------------------------------------------------
@@ -451,29 +373,5 @@ subroutine cds_remove_zero(this) !This subroutine removes any diagonals which co
   end if
 
 end subroutine
-
-!----------------------------------------------------------------------------------------------------
-!----------------------------------------------------------------------------------------------------
-
-integer function cds_max_entries_row(this)result(n_rowentriesmax)
-  !This function returns how many entries there are in the most populated row
-
-  class(t_cds), intent(in)           ::  this !The matrix being examined
-  integer                                 ::  ii, jj !Generic counting parameters
-
-  n_rowentriesmax=0
-  rowmaxouter: do ii=1, this%ndiag
-    rowmaxinner: do jj=ii,this%ndiag
-      if (this%distance(jj)-this%distance(ii)>=this%n_row) then
-        n_rowentriesmax=max(n_rowentriesmax, jj-ii)
-        cycle rowmaxouter
-      end if
-    end do rowmaxinner
-    n_rowentriesmax=max(n_rowentriesmax, this%ndiag-ii+1)
-  end do rowmaxouter
-
-  !n_rowentriesmax=n_rowentriesmax+1
-
-end function  cds_max_entries_row
 
 end module CDS_Mod
