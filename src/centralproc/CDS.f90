@@ -14,7 +14,6 @@ contains
   procedure ::  get => cds_get
   procedure ::  set => cds_set
   procedure ::  operate => operate_cds
-  procedure ::  set_values => cds_set_values
   procedure ::  find_diag_ref => cds_find_diag_ref
   procedure ::  remove_zero => cds_remove_zero
 
@@ -99,14 +98,76 @@ subroutine cds_set(this, row, column, value)
   integer, intent(in)                         ::  row !The row of the entry to be modified
   integer, intent(in)                         ::  column !The column of the entry to be modified
   real(kind=dp), intent(in)                   ::  value !The value it is to be modifed to
-  integer, dimension(1)                       ::  rowarray, columnarray
-  real(kind=dp), dimension(1)                 ::  valuearray
+  integer                   ::  diagonal !The diagonal to be modified
+  integer                   ::  diagref !The index of diagonal in this%diagonals
+  logical                   ::  padded !Whether the current value is padded or not
+  integer, dimension(:), allocatable                    ::  distancetemp  !Temporary version of distance array
+  real(kind=dp), dimension(:,:), allocatable            ::  valuestemp  !Temporary version of the values array
+  integer                                     ::  jj !A loop variable
 
-  rowarray=row
-  columnarray=column
-  valuearray=value
+  !Find the diagonal of the matrix to be modified
+  diagonal=column-row
 
-  call this%set_values(1, rowarray, columnarray, valuearray)
+  !Find out whether the diagnoals exist and, if so, what their references are
+  call this%find_diag_ref(diagonal, diagref, padded)
+
+  if (padded)then
+    !The case where the diagonal is not explicitly stored in the matrix
+    !If the values array of the cds is allocated then store the value array of the cds into the temporary array
+    if (allocated(this%values)) then
+      allocate(valuestemp(this%ndiag, this%n_row))
+      valuestemp=this%values
+      !Reallocate the value array and put the values back in
+      deallocate(this%values)
+    end if
+
+    !Change values so it is the correct value in previously defined entries and zero in new diagonals
+    allocate(this%values(this%ndiag+1,this%n_row))
+    if(allocated(valuestemp))this%values(1:this%ndiag,:)=valuestemp
+    this%values(this%ndiag+1:this%ndiag+1,:)=0.0_dp
+
+    !Now do the same for distance
+    if (allocated(this%distance)) then
+      allocate(distancetemp(this%ndiag))
+      distancetemp=this%distance
+      !Reallocate the value array and put the values back in
+      deallocate(this%distance)
+    end if
+
+    !Change distance so it is the correct value in previously defined entries and zero for new diagonals which are at the end
+    allocate(this%distance(this%ndiag+1))
+    if(allocated(distancetemp))this%distance(1:this%ndiag)=distancetemp
+    this%distance(this%ndiag+1:this%ndiag+1)=0
+
+    !Deallocate the temporary arrays
+    if (allocated(distancetemp)) deallocate(distancetemp)
+    if (allocated(valuestemp)) deallocate(valuestemp)
+
+    !Move the values and distances to make space for the new diagonal
+    !First, find where the diagonal needs to be
+    do jj=1, this%ndiag+1
+      if (this%distance(jj).gt.diagonal .or. jj==this%ndiag+1) then
+        !Now we have found where it should be inserted, insert the diagonal in distance and move the values array appropriately. Set the new diagonal to a value of zero for now.
+        if (jj.ne.this%ndiag+1) then
+          this%distance(jj+1:this%ndiag+1)=this%distance(jj:this%ndiag+1-1)
+          this%values(jj+1:this%ndiag+1,:)=this%values(jj:this%ndiag+1-1,:)
+        end if
+        this%distance(jj)=diagonal
+        this%values(jj,:)=0.0_dp
+        diagref = jj
+        exit
+      end if
+    end do
+
+    !Increase ndiag to represent the new diagonal
+    this%ndiag = this%ndiag + 1
+  end if
+
+  !Find the relevant diagonal for the new value and insert it
+  this%values(diagref,row)=value
+
+  !Remove any zero diagonals which have been created
+  call this%remove_zero()
 
 end subroutine
 
@@ -114,7 +175,7 @@ end subroutine
 !----------------------------------------------------------------------------------------------------
 
 subroutine operate_cds(this, vector_in, vector_out)
-  class(t_cds), intent(in)               ::  this !The matrix to multiply the vector by
+  class(t_cds), intent(in)                    ::  this !The matrix to multiply the vector by
   real(kind=dp), dimension(:), intent(in)     ::  vector_in  !The vector to be multiplied
   real(kind=dp), dimension(:), intent(inout)  ::  vector_out  !The vector which results from the multiplication
   integer                                     ::  column !Temporarily stores the column of a variable
@@ -140,135 +201,6 @@ subroutine operate_cds(this, vector_in, vector_out)
   end do
 
 end subroutine operate_cds
-
-!----------------------------------------------------------------------------------------------------
-!----------------------------------------------------------------------------------------------------
-
-subroutine cds_set_values(this, nvaluesin, rows, columns, valuesin) !A subroutine which sets specific entries in the matrix to a certain values
-  class(t_cds), intent(inout)                      ::  this !The matrix to be modified
-  integer, intent(in)                                   ::  nvaluesin  !The number of values to be inserted
-  integer, dimension(:), intent(in)                     ::  rows !The row of the entry in the matrix to be modified
-  integer, dimension(:), intent(in)                     ::  columns  !The column of the entry to be modified
-  real(kind=dp), dimension(:), intent(in)               ::  valuesin !The value which is to be inserted
-  integer, dimension(:), allocatable                    ::  diagonals !The diagonal of the new values
-  integer, dimension(:), allocatable                    ::  diagref !The references of the diagonal in the initial matrix
-  logical, dimension(:), allocatable                    ::  padded !The array telling us whether the current diagonals are padded or not
-  integer, dimension(:), allocatable                    ::  newdiags  !The matrix which contains the values of the diagonals to be created
-  integer, dimension(:), allocatable                    ::  newdiagstemp  !Temporary version of newdiags
-  integer, dimension(:), allocatable                    ::  distancetemp  !Temporary version of distance array
-  real(kind=dp), dimension(:,:), allocatable            ::  valuestemp  !Temporary version of the values array from the cds
-  integer                                               ::  nnewdiags !The number of new diagonals added
-  logical                                               ::  newdiag !A variables used to track if a diagonal has already been added
-  integer                                               ::  ii,jj !Generic counting variables
-
-  allocate(padded(nvaluesin), diagref(nvaluesin), diagonals(nvaluesin))
-
-  !Find the diagonal of the matrix to be modified
-  diagonals=columns-rows
-
-  !Set the number of new diagonals to zero to begin with
-  nnewdiags=0
-
-  !Loop over the values to be added
-  do ii=1, nvaluesin
-    !Find out whether the diagnoals exist and, if so, what their references are
-    call this%find_diag_ref(diagonals(ii), diagref(ii), padded(ii))
-    if (padded(ii)) then
-      !If it is padded then see if the newdiags variable is allocated
-      if (allocated(newdiags) .eqv. .FALSE.) then
-        !If it isn't then allocate it and store the value
-        nnewdiags=1
-        allocate(newdiags(nnewdiags))
-        newdiags(1)=diagonals(ii)
-      else
-        !Check to see the diagonal hasn't already been marked to be added
-        newdiag=.true.
-        do jj=1, nnewdiags
-          if (diagonals(ii)==newdiags(jj)) then
-            newdiag=.false.
-            exit
-          end if
-        end do
-        !If it hasn't already been marked to be added then add it to the list of diagonals to be added, if the value to be added sin't zero
-        if (newdiag .and. valuesin(ii).ne.0.0_dp) then
-          !Otherwise, temporarily store the newdiags
-          nnewdiags=nnewdiags+1
-          allocate(newdiagstemp(nnewdiags))
-          newdiagstemp(1:nnewdiags-1)=newdiags
-          !Now transfer it back to the newdiags once it has a larger size
-          deallocate(newdiags)
-          allocate(newdiags(nnewdiags))
-          newdiags=newdiagstemp
-          !Now add the new diagonal and deallocate the temporary array
-          newdiags(nnewdiags)=diagonals(ii)
-          deallocate(newdiagstemp)
-        end if
-      end if
-    end if
-  end do
-
-  !If the values array of the cds is allocated then store the value array of the cds into the temporary array
-  if (allocated(this%values)) then
-    allocate(valuestemp(this%ndiag, this%n_row))
-    valuestemp=this%values
-    !Reallocate the value array and put the values back in
-    deallocate(this%values)
-  end if
-
-  !Change values so it is the correct value in previously defined entries and zero in new diagonals
-  allocate(this%values(this%ndiag+nnewdiags,this%n_row))
-  if(allocated(valuestemp))this%values(1:this%ndiag,:)=valuestemp
-  this%values(this%ndiag+1:this%ndiag+nnewdiags,:)=0.0_dp
-
-  !Now do the same for distance
-  if (allocated(this%distance)) then
-    allocate(distancetemp(this%ndiag))
-    distancetemp=this%distance
-    !Reallocate the value array and put the values back in
-    deallocate(this%distance)
-  end if
-
-  !Change distance so it is the correct value in previously defined entries and zero for new diagonals which are at the end
-  allocate(this%distance(this%ndiag+nnewdiags))
-  if(allocated(distancetemp))this%distance(1:this%ndiag)=distancetemp
-  this%distance(this%ndiag+1:this%ndiag+nnewdiags)=0
-
-  if (allocated(distancetemp)) deallocate(distancetemp)
-  if (allocated(valuestemp)) deallocate(valuestemp)
-
-  !Now insert the new diagonals
-  do ii=1, nnewdiags
-    !First, find where the diagonal needs to be
-    do jj=1, this%ndiag+ii
-      if (this%distance(jj).gt.newdiags(ii) .or. jj==this%ndiag+ii) then
-        !Now we have found where it should be inserted, insert the diagonal in distance and move the values array appropriately. Set the new diagonal to a value of zero for now.
-        if (jj.ne.this%ndiag+ii) then
-          this%distance(jj+1:this%ndiag+ii)=this%distance(jj:this%ndiag+ii-1)
-          !Transferring the values array to the right is necessary via the array valuestemp to avoid stack overflow in the case of a large number of matrix rows
-          allocate(valuestemp(this%ndiag+ii-jj, this%n_row))
-          valuestemp=this%values(jj:this%ndiag+ii-1,:)
-          this%values(jj+1:this%ndiag+ii,:)=valuestemp
-        end if
-        this%distance(jj)=newdiags(ii)
-        this%values(jj,:)=0.0_dp
-        exit
-      end if
-    end do
-  end do
-
-  !Now set the ndiag value of the cds to be correct
-  this%ndiag=this%ndiag+nnewdiags
-
-  !Now, find the relevant diagonal for each new value and insert it unless the diagonal is not inserted
-  do ii=1,nvaluesin
-    call this%find_diag_ref(diagonals(ii), diagref(ii), padded(ii))
-    if (padded(ii).eqv. .false.) this%values(diagref(ii),rows(ii))=valuesin(ii)
-  end do
-
-  !Remove any zero diagonals which have been created
-  call this%remove_zero()
-
-end subroutine cds_set_values
 
 !----------------------------------------------------------------------------------------------------
 !----------------------------------------------------------------------------------------------------
