@@ -4,8 +4,7 @@ use Matrix_Base
 
 implicit none
 
-type, extends(t_matrix_base)  ::  matrix_cds  !A type designed to store a matrix in Compressed Diagonal storage fromat using the Intel MKL diagonal storage format
-  integer, private                            ::  nrow  !An integer giving the size of the matrix to be stored
+type, extends(t_matrix_base)  ::  t_cds  !A type designed to store a matrix in Compressed Diagonal storage fromat using the Intel MKL diagonal storage format
   integer, private                            ::  ndiag !An integer containing the number of diagonals with non-zero elements
   integer, dimension(:), allocatable, private ::  distance  !An array which contains the locations of the diagonals with non-zero elements
   real(kind=dp), dimension(:,:), allocatable  ::  values  !An array which contains the values found in each diagonal. The first dimension increases with increasing diagonal number, the second with increasing row number
@@ -15,7 +14,6 @@ contains
   procedure ::  get => cds_get
   procedure ::  find_diag_ref => cds_find_diag_ref
   procedure ::  set_values => cds_set_values
-  procedure ::  set_size => cds_set_size
   procedure ::  return_size => cds_return_size
   procedure ::  set_ndiag => cds_set_ndiag
   procedure ::  return_ndiag => cds_return_ndiag
@@ -27,15 +25,15 @@ contains
   procedure ::  max_entries_row => cds_max_entries_row
   procedure ::  operate => operate_cds
 
-end type matrix_cds
+end type t_cds
 
 contains
 
 !----------------------------------------------------------------------------------------------------
 !----------------------------------------------------------------------------------------------------
 
-subroutine cds_construct(this, n_row, n_column) !A subroutine which takes nthe size of the matrix as an argument to create an instance of the type matrix_cds
-  class(matrix_cds), intent(inout) :: this !The instance of matrix_cds to be created
+subroutine cds_construct(this, n_row, n_column) !A subroutine which takes nthe size of the matrix as an argument to create an instance of the type t_cds
+  class(t_cds), intent(inout) :: this !The instance of t_cds to be created
   integer, intent(in)              :: n_row, n_column !the size of the matrix
 
   call this%destroy()
@@ -52,24 +50,11 @@ end subroutine
 !----------------------------------------------------------------------------------------------------
 !----------------------------------------------------------------------------------------------------
 
-subroutine cds_destroy(this) !A subroutine which takes an instance of the matrix_cds type and deallocates all arrays and returns the equivalent of a matrix of size 0.
-  class(matrix_cds), intent(inout) :: this !The instance of matrix_cds to be destroyed
+subroutine cds_destroy(this) !A subroutine which takes an instance of the t_cds type and deallocates all arrays and returns the equivalent of a matrix of size 0.
+  class(t_cds), intent(inout) :: this !The instance of t_cds to be destroyed
 
   if (allocated(this%distance)) deallocate(this%distance)
   if (allocated(this%values)) deallocate(this%values)
-
-end subroutine
-
-!----------------------------------------------------------------------------------------------------
-!----------------------------------------------------------------------------------------------------
-
-subroutine cds_set_size(this, mat_size) !A subroutine which sets the size of the matrix, deleting the previous matrix
-  class(matrix_cds), intent(inout)  :: this !The instance of matrix_cds
-  integer, intent(in)               :: mat_size !The value the size the matrix will be set to
-
-  call this%destroy()
-
-  this%nrow=mat_size
 
 end subroutine
 
@@ -77,9 +62,9 @@ end subroutine
 !----------------------------------------------------------------------------------------------------
 
 integer function cds_return_size(this)
-  class(matrix_cds), intent(in) ::  this !The matrix whose size is to be returned
+  class(t_cds), intent(in) ::  this !The matrix whose size is to be returned
 
-  cds_return_size=this%nrow
+  cds_return_size=this%n_row
 
 end function
 
@@ -87,7 +72,7 @@ end function
 !----------------------------------------------------------------------------------------------------
 
 subroutine cds_set_ndiag(this, ndiag) !A subroutine which sets the number of non-zero diagonals. Sets all the distances and values to zero
-  class(matrix_cds), intent(inout)  :: this !The instance of matrix_cds
+  class(t_cds), intent(inout)  :: this !The instance of t_cds
   integer, intent(in)               :: ndiag !The value the size the matrix will be set to
 
   if (allocated(this%values)) deallocate(this%values)
@@ -95,7 +80,7 @@ subroutine cds_set_ndiag(this, ndiag) !A subroutine which sets the number of non
 
   this%ndiag=ndiag
 
-  allocate(this%values(this%ndiag,this%nrow), this%distance(this%ndiag))
+  allocate(this%values(this%ndiag,this%n_row), this%distance(this%ndiag))
 
   this%distance=0
   this%values=0.0_dp
@@ -106,7 +91,7 @@ end subroutine
 !----------------------------------------------------------------------------------------------------
 
 integer function cds_return_ndiag(this)
-  class(matrix_cds), intent(in) ::  this !The matrix for which the number of non-zero diagonals is to be returned
+  class(t_cds), intent(in) ::  this !The matrix for which the number of non-zero diagonals is to be returned
 
   cds_return_ndiag=this%ndiag
 
@@ -116,7 +101,7 @@ end function
 !----------------------------------------------------------------------------------------------------
 
 subroutine cds_set_distance(this, distance) !A subroutine which sets the distance the non-zero diagonals are from the central diagonal.
-  class(matrix_cds), intent(inout)  :: this !The instance of matrix_cds
+  class(t_cds), intent(inout)  :: this !The instance of t_cds
   integer, dimension(:), intent(in) :: distance !The array which distances will be set to
 
   !Check that the number of entries in the supplied distance is equal to what is expected.
@@ -136,7 +121,7 @@ end subroutine
 !----------------------------------------------------------------------------------------------------
 
 function cds_return_distance(this) !This function returns the distance variable
-  class(matrix_cds), intent(in)       ::  this !The matrix for which the number of non-zero diagonals is to be returned
+  class(t_cds), intent(in)       ::  this !The matrix for which the number of non-zero diagonals is to be returned
   integer, dimension(:), allocatable  ::  cds_return_distance
 
   allocate(cds_return_distance(this%ndiag))
@@ -149,19 +134,19 @@ end function
 !----------------------------------------------------------------------------------------------------
 
 real(kind=dp) function cds_get(this, row, column) !A function which returns the value of a specific location in the matrix
-  class(matrix_cds), intent(in) ::  this !The matric whose values are to be returned
+  class(t_cds), intent(in) ::  this !The matric whose values are to be returned
   integer, intent(in)           ::  row  !The row of the value to be returned
   integer, intent(in)           ::  column  !The column of the value to be returned
   integer                       ::  diagonal !The diagonal of the value to be returned
   integer                       ::  location  !The location of the value to be returned within the diagonal
-  integer                       ::  diagref  !The first array index of the value to be returned in the values array of the matrix_cds type
+  integer                       ::  diagref  !The first array index of the value to be returned in the values array of the t_cds type
   integer                       ::  ii  !A generic counting variable
   logical                       ::  padded  !Will be set to false if the value is not padded
 
 !print*, "get", this%ndiag
 
   !Check the called for value is within the matrix. If it's not then end the program
-  if (row.gt.this%nrow .or. column.gt.this%nrow .or. row.lt.1 .or. column.lt.1) then
+  if (row.gt.this%n_row .or. column.gt.this%n_row .or. row.lt.1 .or. column.lt.1) then
     print*, "The value asked to be retrieved by cds_get is outside the size of the matrix. Terminating program."
     STOP
   end if
@@ -181,7 +166,7 @@ real(kind=dp) function cds_get(this, row, column) !A function which returns the 
   !If the value is not in a stored diagonal the return the value 0
   if (padded) then
     cds_get=0.0_dp
-  !Otherwise return the value stored in the values array of the containing matrix_cds type
+  !Otherwise return the value stored in the values array of the containing t_cds type
   else
     cds_get=this%values(diagref,row)
   end if
@@ -192,7 +177,7 @@ end function
 !----------------------------------------------------------------------------------------------------
 
 subroutine cds_set_values(this, nvaluesin, rows, columns, valuesin) !A subroutine which sets specific entries in the matrix to a certain values
-  class(matrix_cds), intent(inout)                      ::  this !The matrix to be modified
+  class(t_cds), intent(inout)                      ::  this !The matrix to be modified
   integer, intent(in)                                   ::  nvaluesin  !The number of values to be inserted
   integer, dimension(:), intent(in)                     ::  rows !The row of the entry in the matrix to be modified
   integer, dimension(:), intent(in)                     ::  columns  !The column of the entry to be modified
@@ -257,14 +242,14 @@ subroutine cds_set_values(this, nvaluesin, rows, columns, valuesin) !A subroutin
 
   !If the values array of the cds is allocated then store the value array of the cds into the temporary array
   if (allocated(this%values)) then
-    allocate(valuestemp(this%ndiag, this%nrow))
+    allocate(valuestemp(this%ndiag, this%n_row))
     valuestemp=this%values
     !Reallocate the value array and put the values back in
     deallocate(this%values)
   end if
-
+print*, "REALLOCATE", this%ndiag+nnewdiags, this%n_row
   !Change values so it is the correct value in previously define entries and zero in new diagonals
-  allocate(this%values(this%ndiag+nnewdiags,this%nrow))
+  allocate(this%values(this%ndiag+nnewdiags,this%n_row))
   if(allocated(valuestemp))this%values(1:this%ndiag,:)=valuestemp
   this%values(this%ndiag+1:this%ndiag+nnewdiags,:)=0.0_dp
 
@@ -293,7 +278,7 @@ subroutine cds_set_values(this, nvaluesin, rows, columns, valuesin) !A subroutin
         if (jj.ne.this%ndiag+ii) then
           this%distance(jj+1:this%ndiag+ii)=this%distance(jj:this%ndiag+ii-1)
           !Transferring the values array to the right is necessary via the array valuestemp to avoid stack overflow in the case of a large number of matrix rows
-          allocate(valuestemp(this%ndiag+ii-jj, this%nrow))
+          allocate(valuestemp(this%ndiag+ii-jj, this%n_row))
           valuestemp=this%values(jj:this%ndiag+ii-1,:)
           this%values(jj+1:this%ndiag+ii,:)=valuestemp
         end if
@@ -322,7 +307,7 @@ end subroutine cds_set_values
 !----------------------------------------------------------------------------------------------------
 
 subroutine cds_set(this, row, column, value)
-  class(matrix_cds), intent(inout)            ::  this !The matrix to be modified
+  class(t_cds), intent(inout)            ::  this !The matrix to be modified
   integer, intent(in)                         ::  row !The row of the entry to be modified
   integer, intent(in)                         ::  column !The column of the entry to be modified
   real(kind=dp), intent(in)                   ::  value !The value it is to be modifed to
@@ -343,15 +328,15 @@ end subroutine
 
 subroutine cds_find_diag_ref(this, diagonal, diagref, padded)!A subroutine which returns whether the diagonal is padded and, if not, what the reference of the diagonal is.
 
-  class(matrix_cds), intent(in) ::  this !The matrix whose values are to be returned
+  class(t_cds), intent(in) ::  this !The matrix whose values are to be returned
   integer                       ::  diagonal !The location of the diagonal whose reference is to be found
-  integer, intent(out)          ::  diagref  !The first array index of the value to be returned in the values array of the matrix_cds type
+  integer, intent(out)          ::  diagref  !The first array index of the value to be returned in the values array of the t_cds type
   integer                       ::  ii  !A generic counting variable
   logical, intent(out)          ::  padded  !Will be set to false if the value is not padded
 
   !Initially assume the variable is in a padded cell
   padded=.true.
-  !Find out which diagonal stored in matrix_cds type the value to bre returned is and turn padded to false. If
+  !Find out which diagonal stored in t_cds type the value to bre returned is and turn padded to false. If
   do ii=1, this%ndiag
     if (diagonal==this%distance(ii)) then
       padded=.false.
@@ -371,7 +356,7 @@ end subroutine
 !----------------------------------------------------------------------------------------------------
 
 subroutine cds_remove_zero(this) !This subroutine removes any diagonals which contain only zeros
-  class(matrix_cds), intent(inout)            ::  this !The matrix to be modified
+  class(t_cds), intent(inout)            ::  this !The matrix to be modified
   integer                                     ::  ndiagtemp !Temporary value of nubmer of non-zero diagonals
   logical                                     ::  allzero !False if a diagonal has a non-zero entry
   integer                                     ::  lower, upper  !Lower and upper locations of
@@ -396,10 +381,10 @@ subroutine cds_remove_zero(this) !This subroutine removes any diagonals which co
     allzero=.true.
     if (this%distance(ii).ge.0) then
       lower=1
-      upper=this%nrow-this%distance(ii)
+      upper=this%n_row-this%distance(ii)
     else
       lower=1-this%distance(ii)
-      upper=this%nrow
+      upper=this%n_row
     end if
       do jj=lower, upper
         if (this%values(ii,jj).ne.0.0_dp) then
@@ -431,11 +416,11 @@ subroutine cds_remove_zero(this) !This subroutine removes any diagonals which co
 !  !Finally, if necessary, place the values and distance variables into temporary arrays before real(kind=dp)locating the main array and insering variables
   if (this%ndiag.ne.ndiagtemp)then
     this%ndiag=ndiagtemp
-    allocate(distancetemp(ndiagtemp), valuestemp(ndiagtemp,this%nrow))
+    allocate(distancetemp(ndiagtemp), valuestemp(ndiagtemp,this%n_row))
     distancetemp=this%distance(1:ndiagtemp)
     valuestemp=this%values(1:ndiagtemp,:)
     deallocate(this%distance, this%values)
-    allocate(this%distance(this%ndiag), this%values(this%ndiag,this%nrow))
+    allocate(this%distance(this%ndiag), this%values(this%ndiag,this%n_row))
     this%distance=distancetemp
     this%values=valuestemp
   end if
@@ -449,7 +434,7 @@ subroutine cds_check_symmetric(this)
 
 !This subroutine checks to see if the matrix is symmetric and tells the user the highest absolute and relative differences and their locations between the two halves
 
-  class(matrix_cds), intent(inout)    ::  this !The matrix being checked
+  class(t_cds), intent(inout)    ::  this !The matrix being checked
   real(kind=dp)                       ::  highest_diff !The highest absolute difference between M(ii,jj) and M(jj,ii)
   real(kind=dp)                       ::  highest_rel_diff !The highest relative difference between M(ii,jj) and M(jj,ii)
   integer                             ::  highest_diff_row, highest_diff_column, highest_rel_diff_row, highest_rel_diff_column !The locations of the highest relative and absolute differences
@@ -478,7 +463,7 @@ subroutine cds_check_symmetric(this)
   do ii=1, this%return_ndiag()
     if (diagonal_checked(ii) .or. this%distance(ii)==0) cycle
     call this%find_diag_ref(-this%distance(ii), opposite_diag_ref, oppsoite_diag_padded)
-    do jj=max(1, -this%distance(ii)+1), min(this%return_size(), this%nrow-this%distance(ii))
+    do jj=max(1, -this%distance(ii)+1), min(this%return_size(), this%n_row-this%distance(ii))
       if (oppsoite_diag_padded)then
         highest_rel_diff=1.0_dp
         highest_rel_diff_row=jj
@@ -518,24 +503,24 @@ end subroutine cds_check_symmetric
 !----------------------------------------------------------------------------------------------------
 !----------------------------------------------------------------------------------------------------
 
-integer function cds_max_entries_row(this)result(nrowentriesmax)
+integer function cds_max_entries_row(this)result(n_rowentriesmax)
   !This function returns how many entries there are in the most populated row
 
-  class(matrix_cds), intent(in)           ::  this !The matrix being examined
+  class(t_cds), intent(in)           ::  this !The matrix being examined
   integer                                 ::  ii, jj !Generic counting parameters
 
-  nrowentriesmax=0
+  n_rowentriesmax=0
   rowmaxouter: do ii=1, this%ndiag
     rowmaxinner: do jj=ii,this%ndiag
-      if (this%distance(jj)-this%distance(ii)>=this%nrow) then
-        nrowentriesmax=max(nrowentriesmax, jj-ii)
+      if (this%distance(jj)-this%distance(ii)>=this%n_row) then
+        n_rowentriesmax=max(n_rowentriesmax, jj-ii)
         cycle rowmaxouter
       end if
     end do rowmaxinner
-    nrowentriesmax=max(nrowentriesmax, this%ndiag-ii+1)
+    n_rowentriesmax=max(n_rowentriesmax, this%ndiag-ii+1)
   end do rowmaxouter
 
-  !nrowentriesmax=nrowentriesmax+1
+  !n_rowentriesmax=n_rowentriesmax+1
 
 end function  cds_max_entries_row
 
@@ -543,25 +528,25 @@ end function  cds_max_entries_row
 !----------------------------------------------------------------------------------------------------
 
 subroutine operate_cds(this, vector_in, vector_out)
-  class(matrix_cds), intent(in)               ::  this !The matrix to multiply the vector by
+  class(t_cds), intent(in)               ::  this !The matrix to multiply the vector by
   real(kind=dp), dimension(:), intent(in)     ::  vector_in  !The vector to be multiplied
   real(kind=dp), dimension(:), intent(inout)  ::  vector_out  !The vector which results from the multiplication
   integer                                     ::  column !Temporarily stores the column of a variable
   integer                                     ::  ii, jj  !Generic counting variables
 
   !First, check if the vector to be multiplied has the same number of rows as the matrix
-  if (size(vector_in).ne.this%nrow) then
-    print*, "cds_multiply_vector has been given a vector of size ", size(vector_in), " to multiply which is of a different size to the matrix which is of size ", this%nrow, ". Terminating."
+  if (size(vector_in).ne.this%n_row) then
+    print*, "cds_multiply_vector has been given a vector of size ", size(vector_in), " to multiply which is of a different size to the matrix which is of size ", this%n_row, ". Terminating."
     stop
   end if
 
   !Set the output to zero start with, then add up all contributions
   vector_out=0.0_dp
-  do ii=1, this%nrow
+  do ii=1, this%n_row
     do jj=1, this%ndiag
       !Caluculate column of element to see if the element is within the matrix
       column=this%distance(jj)+ii
-      if (column.gt.0 .and. column .le. this%nrow)then
+      if (column.gt.0 .and. column .le. this%n_row)then
         !Perform the multiplication
         vector_out(ii)=vector_out(ii)+this%values(jj,ii)*vector_in(column)
       end if
